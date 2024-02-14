@@ -1,0 +1,8 @@
+# It's just Kickass.jar
+tools/*
+
+# released result
+servant.bin
+
+# support files
+*.sym
