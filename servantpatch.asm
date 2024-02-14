@@ -37,7 +37,7 @@
 
 .print "Assembling SERVANT.BIN"
 .print "Load into VICE with bank ram; l 'servant.bin' 0 8002; a 8000 nop nop"
-.segmentdef Combined  [outBin="servant.bin", segments="Base,Patch1,Patch2,Patch3,MainPatch", allowOverlap]
+.segmentdef Combined  [outBin="servant.bin", segments="Base,Patch1,Patch2,Patch3,Patch5,Patch6,MainPatch", allowOverlap]
 
 .segment Base [start = $8000, max=$ffff]
 // load binary image of ROM, created and configured by Servant, saved with CTRL+'+' combination OR dumped from an EPROM (32768 bytes)
@@ -66,6 +66,50 @@ Patch2Cont:
 		.pc = $99E5 "Patch to go up/root dir"
 		jsr GoToRoot
 
+//.segment Patch4 []
+//		.pc = $87AA "Patch to fake memconfig as QBB in bank 1/3"
+//		ldx #%11001110		// bank 3, ROM($C-F), RAM($8-C), RAM ($4-8), I/O
+
+.segment Patch5 [min=$8355, max=$837b]
+		.pc = $8355 "Patch to read/write QBB as remapped stack from bank 3 (1/2)"
+		// in X/Y - address in QBB (64K), $CE=X (lobyte) top of stack: A(store), above it Cflag
+		sta $cf
+		plp			// restore C
+		php			// but keep I
+		sei
+		lda $ff00
+		pha
+		and #%11111110		// enable I/O
+		sta $ff00
+		lda $d506
+		sta $ce
+		and #%11110000		// disable bottom sharing
+		sta $d506
+		jmp QBB_2		// jump to the second part
+
+.segment Patch6 [min=$87a7, max=$87c8]
+		.pc = $87a7 "Patch to read/write QBB as remapped stack from bank 3 (2/2)"
+QBB_2:
+
+//		lda $d509		// store p1l
+//		sta $05
+//		lda $d50a		// store p1h
+//		sta $06
+		lda #%00000011		// p1h first, bank 3 (or 1 on stock)
+		sta $d50a
+		sty $d509		// p1l second
+
+		lda $cf
+		bcs @load
+		sta $0100,x
+@load:		lda $0100,x
+		tax
+		lda $ce
+		sta $d506
+
+		jmp QBB_3
+
+
 /////////////////////////////////////
 
 .segment MainPatch [min=$8453,max=$84b6]
@@ -73,6 +117,25 @@ Patch2Cont:
 		.pc = $8453 "Patch saving SERVANT.MOD"
 
 		jmp $818D		// someone pressed CTRL++, but skip over this code
+
+QBB_3:
+		ldy #0
+		sty $d50a		// p1h first
+		iny
+		sty $d509		// p1l second
+
+//		lda #0 //		lda $06
+//		sta $d50a		// p1h first
+//		lda #1 //		lda $05
+//		sta $d509		// p1l second
+		pla
+		sta $ff00
+		plp			// restore I
+		txa
+		clc			// original routine clears C
+		rts
+
+
 
 CheckFileType:
 		plp
