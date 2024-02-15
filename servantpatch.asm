@@ -42,7 +42,7 @@
 
 .print "Assembling SERVANT.BIN"
 .print "Load into VICE with bank ram; l 'servant.bin' 0 8002; a 8000 nop nop"
-.segmentdef Combined  [outBin="servant.bin", segments="Base,Patch1,Patch2,Patch3,Patch4,Patch5,Patch6,Patch7,Patch8,MainPatch", allowOverlap]
+.segmentdef Combined  [outBin="servant.bin", segments="Base,Patch1,Patch2,Patch3,Patch4,Patch5,Patch6,Patch7,Patch8,Patch9,MainPatch", allowOverlap]
 
 .segment Base [start = $8000, max=$ffff]
 // load binary image of ROM, created and configured by Servant, saved with CTRL+'+' combination OR dumped from an EPROM (32768 bytes)
@@ -105,6 +105,7 @@ QBB_2:
 		sta $0100,x
 @load:		lda $0100,x
 		tax
+		lda $ce
 		jmp QBB_3
 
 .segment Patch6 [min=$8f7e, max=$8f86]
@@ -118,40 +119,59 @@ QBB_2:
 		.pc = $84c4 "Patch to preserve shift/c=/ctrl/alt status when calling GO64"
 		jsr GO64StoreFlags
 
-.segment Patch8 [min=$854d, max=$8550]
+.segment Patch8 [min=$854d, max=$8551]
 		.pc = $854d "Patch to choose bank for GO64"
+		ldx $06
 		jsr GO64GetByte
+
+.segment Patch9 [min=$83f1, max=$83ff]
+		.pc = $83f1 "Patch + handler, drop default colors, only reset prefs"
+		jsr $8400	// setup screen colors
+		jmp $818d	// return to loop
+		// $8453 is never called
+		// $8440 is never called
+
+GO64StoreFlags2:
+		sta $05		// CTRL flag: =0 (bank 1) / <>0 (bank 2) flag
+		sta $06
+		inc $06		// bank number: 1 or 2
+		rts
 
 /////////////////////////////////////
 
-.segment MainPatch [min=$8453,max=$84b6]
+.segment MainPatch [min=$8440,max=$84b6]
 
-		.pc = $8453 "Patch saving SERVANT.MOD"
+		.pc = $8440 "Patch saving SERVANT.MOD"
 
-		jmp $818D		// someone pressed CTRL++, but skip over this code
+// 8440 = set default colors
+// 8453 = save servant.mod
 
-GO64GetByte:	cpy #1			// LDA #$7E <- this byte is #1
+
+GO64GetByte:
+		cpy #1			// is this byte 1? LDA #$7E <- this byte is #1
 		bne @ret		// not, return original byte
-		lda $24			// CTRL flag?
-		beq @ret		// not, return original byte
-		lda #%10111110		// bank 2 (or bank 0 on unexpanded C128)
+		lda bankNumbers-1,x
 		rts
 @ret:		lda $88df,y
 		rts
 
+bankNumbers:	.byte %01111110		// bank 1
+		.byte %10111110		// bank 2
+
 GO64StoreFlags:
-		lda $d3			// preserve C=/CTRL/ALT flags in $24
-		tay
+		lda $d3			// preserve C=/CTRL/ALT flags in $05
 		and #%00000100		// keep only CTRL flag to choose bank 2 instead of 1
-		sta $24
-		tya
+		lsr
+		lsr
+		//sta $05			// 0 (bank1) or 1 (bank2)
+		jsr GO64StoreFlags2
+		lda $d3
 		sec
 		rts
 
 QBB_3:
-		lda $ce
-		sta $d506
 
+		sta $d506
 		lda $06
 		sta $d50a		// p1h first
 		lda $05
