@@ -38,11 +38,15 @@
 // Patch 6 corrects bug in code that reads programs from genuine/fake QBB, it was there, unnoticed for 22 years
 //
 // Patch 7 redirects function called after pressing '9' to store also CTRL flag so '9' calls C64 mode in bank 1, '9'+CTRL call C64 mode in bank 2
-
+//
+// Patch 8 plugs into function that copies trampoline code into $0400 to choose correct bank itself (X register) and patch bytes $01 and $33 to correct control register values
+// Patch 9 disables SHIFT+ and CTRL+ handler, leaves only '+' to reset prefs; this disables 'reset to default' function at $8440 so we have more space
+//
+// Patch 10 takes bank number for JSRFAR ($FF6E) from precomputed value in $06 (depends on status of CTRL)
 
 .print "Assembling SERVANT.BIN"
 .print "Load into VICE with bank ram; l 'servant.bin' 0 8002; a 8000 nop nop"
-.segmentdef Combined  [outBin="servant.bin", segments="Base,Patch1,Patch2,Patch3,Patch4,Patch5,Patch6,Patch7,Patch8,Patch9,MainPatch", allowOverlap]
+.segmentdef Combined  [outBin="servant.bin", segments="Base,Patch1,Patch2,Patch3,Patch4,Patch5,Patch6,Patch7,Patch8,Patch9,Patch10,MainPatch", allowOverlap]
 
 .segment Base [start = $8000, max=$ffff]
 // load binary image of ROM, created and configured by Servant, saved with CTRL+'+' combination OR dumped from an EPROM (32768 bytes)
@@ -137,6 +141,14 @@ GO64StoreFlags2:
 		inc $06		// bank number: 1 or 2
 		rts
 
+.segment Patch10 [min=$855f, max=$8560]
+		.pc = $855f "Patch to take bank number from CTRL flag status before GO64"
+		lda $06		// we could keep it in $02 already, but there is no space saving in that anyway
+
+//.segment Patch11 [min=$853b, max=$853d]
+//		.pc = $853b "Patch to check if bank number in $06 is 1 or 2"
+//		jsr GO64CheckBank
+
 /////////////////////////////////////
 
 .segment MainPatch [min=$8440,max=$84b6]
@@ -146,17 +158,22 @@ GO64StoreFlags2:
 // 8440 = set default colors
 // 8453 = save servant.mod
 
-
 GO64GetByte:
 		cpy #1			// is this byte 1? LDA #$7E <- this byte is #1
+		beq @ff00
+		cpy #$33		// is this byte $33 LDA #$40 <- bank for VIC
 		bne @ret		// not, return original byte
-		lda bankNumbers-1,x
+		lda vicBankNumbers-1,x
+		rts
+@ff00:		lda bankNumbers-1,x
 		rts
 @ret:		lda $88df,y
 		rts
 
 bankNumbers:	.byte %01111110		// bank 1
 		.byte %10111110		// bank 2
+vicBankNumbers:	.byte %01000000		// bank 1
+		.byte %10000000		// bank 2
 
 GO64StoreFlags:
 		lda $d3			// preserve C=/CTRL/ALT flags in $05
