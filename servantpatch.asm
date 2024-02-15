@@ -37,16 +37,20 @@
 // Patches 4/5 replace QBB code by fake QBB that uses system RAM bank 3 (bank 1 on unexpanded C128)
 // Patch 6 corrects bug in code that reads programs from genuine/fake QBB, it was there, unnoticed for 22 years
 //
-// Patch 7 redirects function called after pressing '9' to store also CTRL flag so '9' calls C64 mode in bank 1, '9'+CTRL call C64 mode in bank 2
+// Patch 7 allows to press RETURN ($0D) or C=+RETURN ($8D) after message for confirmation after choosing option '9' from menu; actual status saved in patch 11
+//         it can't be CTRL+RETURN because that is mapped to keycode $00
 //
 // Patch 8 plugs into function that copies trampoline code into $0400 to choose correct bank itself (X register) and patch bytes $01 and $33 to correct control register values
 // Patch 9 disables SHIFT+ and CTRL+ handler, leaves only '+' to reset prefs; this disables 'reset to default' function at $8440 so we have more space
 //
 // Patch 10 takes bank number for JSRFAR ($FF6E) from precomputed value in $06 (depends on status of CTRL)
+//
+// Patch 11 called at the common beginning of GO64 routine - check for C= key status (C= not CTRL because of patch 7) and set bank in $06 properly
+//          choose bank 1 ($05==0, $06==1) when C= is released and bank 2 ($05==1, $06==2) when C= is pressed
 
 .print "Assembling SERVANT.BIN"
 .print "Load into VICE with bank ram; l 'servant.bin' 0 8002; a 8000 nop nop"
-.segmentdef Combined  [outBin="servant.bin", segments="Base,Patch1,Patch2,Patch3,Patch4,Patch5,Patch6,Patch7,Patch8,Patch9,Patch10,MainPatch", allowOverlap]
+.segmentdef Combined  [outBin="servant.bin", segments="Base,Patch1,Patch2,Patch3,Patch4,Patch5,Patch6,Patch7,Patch8,Patch9,Patch10,Patch11,MainPatch", allowOverlap]
 
 .segment Base [start = $8000, max=$ffff]
 // load binary image of ROM, created and configured by Servant, saved with CTRL+'+' combination OR dumped from an EPROM (32768 bytes)
@@ -119,9 +123,9 @@ QBB_2:
 		lda $c3
 		cmp $c1
 
-.segment Patch7 [min=$84c4, max=$84c6]
-		.pc = $84c4 "Patch to preserve shift/c=/ctrl/alt status when calling GO64"
-		jsr GO64StoreFlags
+.segment Patch7 [min=$816e, max=$8170]
+		.pc = $816e "Patch to accept <RETURN> ($0D) as well as C=+<RETURN) ($8D)"
+		jsr WaitForReturn
 
 .segment Patch8 [min=$854d, max=$8551]
 		.pc = $854d "Patch to choose bank for GO64"
@@ -136,18 +140,19 @@ QBB_2:
 		// $8440 is never called
 
 GO64StoreFlags2:
-		sta $05		// CTRL flag: =0 (bank 1) / <>0 (bank 2) flag
+		sta $05		// C= flag: =0 (bank 1) / <>0 (bank 2) flag
 		sta $06
 		inc $06		// bank number: 1 or 2
 		rts
 
 .segment Patch10 [min=$855f, max=$8560]
-		.pc = $855f "Patch to take bank number from CTRL flag status before GO64"
+		.pc = $855f "Patch to take bank number from C= flag status before GO64"
 		lda $06		// we could keep it in $02 already, but there is no space saving in that anyway
 
-//.segment Patch11 [min=$853b, max=$853d]
-//		.pc = $853b "Patch to check if bank number in $06 is 1 or 2"
-//		jsr GO64CheckBank
+.segment Patch11 [min=$853e, max=$8541]
+		.pc = $853e "Patch to set bank number in $06 to 1 or 2"
+		jsr GO64StoreFlags
+		nop
 
 /////////////////////////////////////
 
@@ -157,6 +162,11 @@ GO64StoreFlags2:
 
 // 8440 = set default colors
 // 8453 = save servant.mod
+
+WaitForReturn:
+		jsr $a2fa
+		and #%01111111
+		rts
 
 GO64GetByte:
 		cpy #1			// is this byte 1? LDA #$7E <- this byte is #1
@@ -177,13 +187,11 @@ vicBankNumbers:	.byte %01000000		// bank 1
 
 GO64StoreFlags:
 		lda $d3			// preserve C=/CTRL/ALT flags in $05
-		and #%00000100		// keep only CTRL flag to choose bank 2 instead of 1
+		and #%00000010		// keep only C= flag to choose bank 2 instead of 1
 		lsr
-		lsr
-		//sta $05			// 0 (bank1) or 1 (bank2)
 		jsr GO64StoreFlags2
-		lda $d3
-		sec
+		lda #$00
+		sta $24
 		rts
 
 QBB_3:
