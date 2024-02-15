@@ -31,13 +31,15 @@
 //
 // Patch 2 changes the second letter values compared in the original code, from 'C' to 'B' and from 'P' to 'R'
 //
-// Patch 3 casues Servant to run command 'CD<leftarrow>' every time '/' is pressed to go up one level. It has no effect on 1541/71/81.
+// Patch 3 causes Servant to run command 'CD<leftarrow>' every time '/' is pressed to go up one level. It has no effect on 1541/71/81.
 //         Then it jumps back to the original code.
 // 
+// Patches 4/5 replace QBB code by writing data into system RAM bank 3 (or 1 on unexpanded C128)
+// Patch 6 corrects but in QBB code that reads programs from there
 
 .print "Assembling SERVANT.BIN"
 .print "Load into VICE with bank ram; l 'servant.bin' 0 8002; a 8000 nop nop"
-.segmentdef Combined  [outBin="servant.bin", segments="Base,Patch1,Patch2,Patch3,Patch4,Patch5,MainPatch", allowOverlap]
+.segmentdef Combined  [outBin="servant.bin", segments="Base,Patch1,Patch2,Patch3,Patch4,Patch5,Patch6,MainPatch", allowOverlap]
 
 .segment Base [start = $8000, max=$ffff]
 // load binary image of ROM, created and configured by Servant, saved with CTRL+'+' combination OR dumped from an EPROM (32768 bytes)
@@ -101,6 +103,13 @@ QBB_2:
 @load:		lda $0100,x
 		tax
 		jmp QBB_3
+
+.segment Patch6 [min=$8f7e, max=$8f86]
+		.pc = $8f7e "Patch to fix a bug in loading data from QBB (compare end to C1/C2, not BF/C0)"
+		cmp $c2
+		bcc $8f6A
+		lda $c3
+		cmp $c1
 
 
 /////////////////////////////////////
