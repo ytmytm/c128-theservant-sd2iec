@@ -34,8 +34,8 @@
 // Patch 3 causes Servant to run command 'CD<leftarrow>' every time '/' is pressed to go up one level. It has no effect on 1541/71/81.
 //         Then it jumps back to the original code.
 // 
-// Patches 4/5 replace QBB code by writing data into system RAM bank 3 (or 1 on unexpanded C128)
-// Patch 6 corrects but in QBB code that reads programs from there
+// Patches 4/5 replace QBB code by fake QBB that uses system RAM bank 3 (bank 1 on unexpanded C128)
+// Patch 6 corrects bug in code that reads programs from genuine/fake QBB, it was there, unnoticed for 22 years
 
 .print "Assembling SERVANT.BIN"
 .print "Load into VICE with bank ram; l 'servant.bin' 0 8002; a 8000 nop nop"
