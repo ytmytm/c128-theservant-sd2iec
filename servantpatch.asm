@@ -36,10 +36,13 @@
 // 
 // Patches 4/5 replace QBB code by fake QBB that uses system RAM bank 3 (bank 1 on unexpanded C128)
 // Patch 6 corrects bug in code that reads programs from genuine/fake QBB, it was there, unnoticed for 22 years
+//
+// Patch 7 redirects function called after pressing '9' to store also CTRL flag so '9' calls C64 mode in bank 1, '9'+CTRL call C64 mode in bank 2
+
 
 .print "Assembling SERVANT.BIN"
 .print "Load into VICE with bank ram; l 'servant.bin' 0 8002; a 8000 nop nop"
-.segmentdef Combined  [outBin="servant.bin", segments="Base,Patch1,Patch2,Patch3,Patch4,Patch5,Patch6,MainPatch", allowOverlap]
+.segmentdef Combined  [outBin="servant.bin", segments="Base,Patch1,Patch2,Patch3,Patch4,Patch5,Patch6,Patch7,Patch8,MainPatch", allowOverlap]
 
 .segment Base [start = $8000, max=$ffff]
 // load binary image of ROM, created and configured by Servant, saved with CTRL+'+' combination OR dumped from an EPROM (32768 bytes)
@@ -111,6 +114,13 @@ QBB_2:
 		lda $c3
 		cmp $c1
 
+.segment Patch7 [min=$84c4, max=$84c6]
+		.pc = $84c4 "Patch to preserve shift/c=/ctrl/alt status when calling GO64"
+		jsr GO64StoreFlags
+
+.segment Patch8 [min=$854d, max=$8550]
+		.pc = $854d "Patch to choose bank for GO64"
+		jsr GO64GetByte
 
 /////////////////////////////////////
 
@@ -119,6 +129,24 @@ QBB_2:
 		.pc = $8453 "Patch saving SERVANT.MOD"
 
 		jmp $818D		// someone pressed CTRL++, but skip over this code
+
+GO64GetByte:	cpy #1			// LDA #$7E <- this byte is #1
+		bne @ret		// not, return original byte
+		lda $24			// CTRL flag?
+		beq @ret		// not, return original byte
+		lda #%10111110		// bank 2 (or bank 0 on unexpanded C128)
+		rts
+@ret:		lda $88df,y
+		rts
+
+GO64StoreFlags:
+		lda $d3			// preserve C=/CTRL/ALT flags in $24
+		tay
+		and #%00000100		// keep only CTRL flag to choose bank 2 instead of 1
+		sta $24
+		tya
+		sec
+		rts
 
 QBB_3:
 		lda $ce
