@@ -23,6 +23,8 @@
 
 // IDEA
 // Patch changes behavior of option '4' - directory listing - to enter/exit subfolders also on SD2IEC ('DIR' files)
+// Patch changes behavior of QBB functions to use bank 3 as 64K QBB
+// Patch changes behavior of option '9' - go 64 mode, Servant asks for confirmation: RETURN uses bank 1 (default), C=+RETURN uses bank 2
 //
 // Originally Servant recognized filetype by its first letter: 'C' for CBM (1581 partitions) or 'P' for PRG (load and run).
 //
@@ -47,10 +49,13 @@
 //
 // Patch 11 called at the common beginning of GO64 routine - check for C= key status (C= not CTRL because of patch 7) and set bank in $06 properly
 //          choose bank 1 ($05==0, $06==1) when C= is released and bank 2 ($05==1, $06==2) when C= is pressed
+//
+// PatchConfig allows to reconfigure Servant settings (except strings assigned to function keys)
+
 
 .print "Assembling SERVANT.BIN"
 .print "Load into VICE with bank ram; l 'servant.bin' 0 8002; a 8000 nop nop"
-.segmentdef Combined  [outBin="servant.bin", segments="Base,Patch1,Patch2,Patch3,Patch4,Patch5,Patch6,Patch7,Patch8,Patch9,Patch10,Patch11,MainPatch", allowOverlap]
+.segmentdef Combined  [outBin="servant.bin", segments="Base,Patch1,Patch2,Patch3,Patch4,Patch5,Patch6,Patch7,Patch8,Patch9,Patch10,Patch11,MainPatch,PatchConfig,PatchVersion", allowOverlap]
 
 .segment Base [start = $8000, max=$ffff]
 // load binary image of ROM, created and configured by Servant, saved with CTRL+'+' combination OR dumped from an EPROM (32768 bytes)
@@ -59,7 +64,25 @@
 //	.var data = LoadBinary("servant.prg", BF_C64FILE)
 	.fill data.getSize(), data.get(i)
 
-/////////////////////////////////////
+///////////////////////////////////// CONFIGURATION
+
+.segment PatchConfig [min=$811b, max=$8122]
+		.pc = $811b "Patch some configuration bytes"
+		.byte $0d		// 40 col text color, default Kernal $0d, default Servant $00
+		.byte $0b		// 40 col background color, default Kernal $0b, default Servant $07
+		.byte $0b		// 40 col border, default Kernal $0d, default Servant $07
+		.byte $0f		// 80 col text color, default $07 (light cyan)
+		.byte $02		// 80 col background, default $00 (black)
+
+		.byte 14		// 14=lowercase upon exit, 142=uppercase upon exit, default Servant 14
+
+		.byte 10		// Servant key: 1-8=Fx key, 9=SHIFT+RUN/STOP, 10=HELP, default Servant 9
+
+.segment PatchVersion [min=$ddef,max=$ddf3]
+		.pc = $ddef "Patch version number"
+		.text "4.85"
+
+///////////////////////////////////// SD2IEC DIRECTORY BROWSING
 
 .segment Patch1 []
 		.pc = $8D7A "Patch to copy one character more"
@@ -78,6 +101,8 @@ Patch2Cont:
 .segment Patch3 []
 		.pc = $99E5 "Patch to go up/root dir"
 		jsr GoToRoot
+
+///////////////////////////////////// BANK 3 AS QBB
 
 .segment Patch4 [min=$8355, max=$837b]
 		.pc = $8355 "Patch to read/write QBB as remapped stack from bank 3 (1/2)"
@@ -123,6 +148,8 @@ QBB_2:
 		lda $c3
 		cmp $c1
 
+///////////////////////////////////// BANK 2 AS OPTIONAL Go64 TARGET
+
 .segment Patch7 [min=$816e, max=$8170]
 		.pc = $816e "Patch to accept <RETURN> ($0D) as well as C=+<RETURN) ($8D)"
 		jsr WaitForReturn
@@ -154,7 +181,7 @@ GO64StoreFlags2:
 		jsr GO64StoreFlags
 		nop
 
-/////////////////////////////////////
+///////////////////////////////////// COMMON PATCH AREA REPLACES DEFAULT COLOR SET AND SERVANT.MOD SAVER
 
 .segment MainPatch [min=$8440,max=$84b6]
 
@@ -169,7 +196,7 @@ WaitForReturn:
 		rts
 
 GO64GetByte:
-		cpy #1			// is this byte 1? LDA #$7E <- this byte is #1
+		cpy #$01		// is this byte $01 LDA #$7E <- memconfig $FF00
 		beq @ff00
 		cpy #$33		// is this byte $33 LDA #$40 <- bank for VIC
 		bne @ret		// not, return original byte
@@ -190,7 +217,7 @@ GO64StoreFlags:
 		and #%00000010		// keep only C= flag to choose bank 2 instead of 1
 		lsr
 		jsr GO64StoreFlags2
-		lda #$00
+		lda #$00		// original code from $853e
 		sta $24
 		rts
 
