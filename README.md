@@ -9,6 +9,11 @@ To make it distinct from the original "The Servant" release I changed the versio
 Download `servant.bin` or the archive from Releases, flash to a 32K EEPROM and plug into U36 socket.
 Use `XI1` command on your SD2IEC to list disk images as folders and just use directory browser (menu option 4) with `RETURN` and `/` to go through folders and disk images.
 
+- The patched version of The Servant uses `HELP` key to start the menu.
+- SD2IEC folders and disk images can be entered/exited from the directory browser
+- RAM bank 3 can be used as 64K Quick Brown Box (QBB) (256K C128 only)
+- RAM bank 2 can be used as an additional C64 mode area (256K C128 only)
+
 ## New Features
 
 The patched version of The Servant uses `HELP` key to start the menu.
