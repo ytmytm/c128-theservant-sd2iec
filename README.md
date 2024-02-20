@@ -6,7 +6,7 @@ To make it distinct from the original "The Servant" release I changed the versio
 
 ## For very impatient
 
-Download `servant.bin` or the archive from Releases, flash to a 32K EEPROM and plug into U36 socket.
+Download [servant.bin](servant.bin) or the archive from Releases, flash to a 32K EEPROM and plug into U36 socket.
 Use `XI1` command on your SD2IEC to list disk images as folders and just use directory browser (menu option 4) with `RETURN` and `/` to go through folders and disk images.
 
 - The patched version of The Servant uses `HELP` key to start the menu.
