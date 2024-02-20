@@ -137,13 +137,14 @@ For SD2IEC
 
 # Configuration and assembly
 
-(Note: if you want to try it out **now** just download the `servant.bin` file from repository or releases on the right)
+(Note: if you want to try it out **now** just download the [servant.bin](servant.bin) file from repository or releases on the right)
 
 You need [KickAss](http://www.theweb.dk/KickAssembler/Main.html#frontpage) to assemble this code.
 
 There is only one file here: [servantpatch.asm](servantpatch.asm). It reads [servant.mod](servant.mod) ROM dump as an input, applies patches and saves the result as [servant.bin](servant.bin).
+You can provide your own ROM dump here. Just rename it to `servant.mod` or change that name in the `servantpatch.asm`.
 
-On the top of the [servantpatch.asm](servantpatch.asm) you can configure the colors for 40- and 80-column screen and the key used to recall Servant.
+On the top of the [servantpatch.asm](servantpatch.asm) you can configure the colors for 40- and 80-column screen and the key used to recall Servant. Disable that patch if you use your own ROM dump.
 
 Assemble the file to get patched ROM as a result. Just type
 
