@@ -4,6 +4,8 @@ This project patches the original "The Servant V4.84" ROM with new functionality
 
 To make it distinct from the original "The Servant" release I changed the version number to 4.85.
 
+<img src="media/servant-4.85.png" alt="C128D running The Servant 4.85 with a file stored on QBB" width=640>
+
 ## For very impatient
 
 Download [servant.bin](servant.bin) or the archive from Releases, flash to a 32K EEPROM and plug into U36 socket.
