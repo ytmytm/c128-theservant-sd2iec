@@ -1,0 +1,329 @@
+Development diary (Maciej 'YTM/Elysium' Witkowiak)
+
+[20240211]
+In April 2022, shortly after receiving universal EEPROM programmer TL866II+ I wanted to quickly make The Servant more useful on a C128 with SD2IEC.
+All I wanted was to be able to quickly navigate folders and disk images in the directory listing (option '4').
+
+The Servant only knows about 1581 (and maybe CMD?) subdirectories marked as 'CBM', while SD2IEC returns 'DIR'.
+I started disassembly, but 32K of this dense code, with encrypted strings was just not worth the effort.
+
+Today I went back to this problem, this time trying to trace where keyboard is read and what happens next. It seems I figured this out.
+
+8d04 cmp #$2f	'/'
+	 beq $8ca8
+8d1c cmp #$0d	'<RETURN>'
+	 beq $8d54
+
+8d88 - CMP #$50 'P' -> PRG, load and run
+       CMP #$43 'C' -> CBM, change 'D'IR?
+		yes -> $8d90
+		saves filename in buffer at $0203, changes first characters to be '/:' and calls SETNAM $FFBD with '/:<name>' to enter folder
+
+.C:8ca8  20 7B 81    JSR $817B -> close all files/channels ($98DA) + smth + set D0/D1<-0
+.C:8cab  20 E5 99    JSR $99E5 -> (below)
+.C:8cae  20 98 A7    JSR $A798 -> ?
+.C:8cb1  4C C3 8B    JMP $8BC3 -> ?
+
+.C:99e5  20 B1 9F    JSR $9FB1 -> detect drivetype, memory-read
+.C:99e8  C0 06       CPY #$06  -> 6==1581?
+.C:99ea  D0 08       BNE $99F4 -> not, do nothing
+.C:99ec  A9 FE       LDA #$FE  -> $FE==special function, send 'I0' via 9844
+.C:99ee  20 29 98    JSR $9829 -> send disk command $FE or A/X/Y parameters for SETNAME or $FF (do... what?)
+.C:99f1  20 DA 98    JSR $98DA -> close all files/channels
+.C:99f4  60          RTS
+
+.C:9829  C9 FE       CMP #$FE
+.C:982b  F0 17       BEQ $9844
+.C:982d  C9 FF       CMP #$FF
+.C:982f  D0 19       BNE $984A
+
+.C:9844  A9 02       LDA #$02
+.C:9846  A2 68       LDX #$68
+.C:9848  A0 98       LDY #$98
+.C:984a  20 BD FF    JSR $FFBD
+
+<RETURN> - Enter directory
+
+Check for filetype - simply use 2nd letter, not first:
+PSUDRCD
+RESEEBI
+GQRLLMR
+
+'R' -> PRG, run
+'B' -> CBM, call '/:<name>'
+'I' -> DIR, call 'CD<name>'
+
+/ - go to root
+	on 1581: I0
+	check for drive, read channel after 'UI' and wait for 'SD2IEC'? worth it?
+	or just send 'CD<-' and ignore the error
+
+[20240212]
+Following skeleton from patching 1571-32K ROM I used KickAss to patch binaries. This was very quick and easy.
+In VICE it's more tricky, the result has no load address and must be loaded from machine monitor with 2 byte offset.
+This is not tested yet, it's too late today. I just wonder if it works. It would be nice to have something that was right on the first attempt.
+
+[20240213]
+Flashed a new rom and it worked on the first try. That's a completely new level of convenience.
+
+[20240214]
+Figured out QBB code. Not many know about QBB - it was a cartridge that mapped banked 16K or RAM in $8000-$BFFF space. There were several versions, even up to 256K but there is no information how these extra banks were controlled. VICE emulates DQBB (double quick brown box), but on C128 it always switches to C64 mode. Real one had a switch to enable/disable 128 mode (probably on /EXROM or /GAME).
+Servant can use only 4 banks = 64K. $DE00 is a control register. Writing to that RAM corrupts underlying system RAM so Servant already switched to bank 1 (or 3 on expanded C128) ($CA into $FF00).
+Let's just use bank 3 (1 on unexpanded in place of QBB). To get access to RAM we can just remap stack. But we also need to turn off memory sharing in lower half - shared memory always covers remapped page0/page1.
+
+Servant flags: $0279 - $00 - no QBB, $FF - QBB exists; $0277/78 last available address in QBB ($3FFF, $7FFF, $BFFF or $FFFF - 4 banks)
+
+.C:8231 - copy $22 bytes from $87A7-$87C8 (inclusive) to $0237 - the code to read/write into QBB lives there in $0237; $CE/CF are temp registers
+
+8332 read  from C3/C4 (+increment C3/C4) -> copy C3/C4 to X/Y, set C=1 -> C=1 setup QBB register+address in $CE/$CF, X/A -> read from CE/CF
+833F write into C1/C2 (+increment C1/C2) -> copy C1/C2 to X/Y, set C=0 -> C=0 setup QBB register+address in $CE/$CF, X/A -> write to  CE/CF
+834A common part to setup address in CE/CF, value for control register, push $FF00 and jump into $0237 to continue. $0237 returns with C=0 always.
+
+; common calculation part
+.C:834a  08          PHP
+.C:834b  CC 78 02    CPY $0278
+.C:834e  90 05       BCC $8355
+.C:8350  EC 77 02    CPX $0277
+.C:8353  B0 27       BCS $837C ; requested address from C1/C2 or C3/C4 out of range
+
+.C:8355  48          PHA	; keep value to write
+.C:8356  86 CE       STX $CE	; lower address byte
+.C:8358  98          TYA	; page address, convert to range $0000-$3FFF, shift to $8000-$BFFF, put into $CF
+.C:8359  2A          ROL A	; page address, convert to bank number for $DE00 control register
+.C:835a  2A          ROL A
+.C:835b  2A          ROL A
+.C:835c  29 03       AND #$03
+.C:835e  85 CF       STA $CF
+.C:8360  A9 03       LDA #$03
+.C:8362  38          SEC
+.C:8363  E5 CF       SBC $CF
+.C:8365  09 38       ORA #$38
+.C:8367  AA          TAX
+.C:8368  98          TYA
+.C:8369  09 80       ORA #$80
+.C:836b  29 BF       AND #$BF
+.C:836d  85 CF       STA $CF
+.C:836f  68          PLA	; restore value to write
+.C:8370  28          PLP	; restore C flag
+.C:8371  A8          TAY
+.C:8372  AD 00 FF    LDA $FF00
+.C:8375  48          PHA
+.C:8376  98          TYA
+.C:8377  A0 00       LDY #$00
+.C:8379  4C 37 02    JMP $0237
+.C:837c  68          PLA	; fix stack, we don't need C flag anymore
+.C:837d  60          RTS
+
+This goes into $0237
+.C:87a7  8E 00 DE    STX $DE00
+.C:87aa  A2 CA       LDX #$CA
+.C:87ac  8E 00 FF    STX $FF00
+.C:87af  AE 30 D0    LDX $D030
+.C:87b2  8C 30 D0    STY $D030
+.C:87b5  B0 02       BCS $87B9
+.C:87b7  91 CE       STA ($CE),Y
+.C:87b9  B1 CE       LDA ($CE),Y
+.C:87bb  8E 30 D0    STX $D030
+.C:87be  8C 00 DE    STY $DE00
+.C:87c1  AA          TAX
+.C:87c2  68          PLA
+.C:87c3  8D 00 FF    STA $FF00
+.C:87c6  8A          TXA
+.C:87c7  18          CLC
+.C:87c8  60          RTS
+
+
+[20240215]
+THERE WAS A BUG IN QBB CODE. Who would have thought:
+
+.C:8f6a  20 32 83    JSR $8332
+.C:8f6d  B0 73       BCS $8FE2
+.C:8f6f  A6 37       LDX $37
+.C:8f71  A0 00       LDY #$00
+.C:8f73  20 77 FF    JSR $FF77
+.C:8f76  E6 AE       INC $AE
+.C:8f78  D0 02       BNE $8F7C
+.C:8f7a  E6 AF       INC $AF
+.C:8f7c  A5 C4       LDA $C4
+.C:8f7e  C5 C0       CMP $C0
+.C:8f80  90 E8       BCC $8F6A
+.C:8f82  A5 C3       LDA $C3
+.C:8f84  C5 BF       CMP $BF
+.C:8f86  90 E2       BCC $8F6A
+.C:8f88  20 BB 83    JSR $83BB
+
+It should compare $C3/C4 (end address within QBB) with $C1/$C2 (current pointer within QBB for read), not $BF/$C0.
+Because of the bug no more than one page was ever copied back.
+
+[20240215 (2)]
+Now a new branch to GO64 into bank2 if after 9 (or SHIFT+9), the confirmation was pressed with C= key.
+C- flag is checked and saved in $05 (0,<>0) and $06 (1 or 2).
+It was really hard to squeeze all the patches. Had to remove option to reset prefs (SHIFT+'+').
+
+Main menu loop starts at $82c3
+List of option keys in $885b for $16 items, check and get item number in Y
+$8304-$830d take from table at $8871 vector of the procedure
+For '9' it's Y=$0D -> $84C4
+
+.C:84c4  A5 D3       LDA $D3     ; shift == 1
+.C:84c6  38          SEC
+.C:84c7  6A          ROR A       ; 
+.C:84c8  6A          ROR A       ; gdy shift to $C0, gdy nic to $40; gdy control to $40
+.C:84c9  85 9D       STA $9D
+.C:84cb  20 66 81    JSR $8166
+.C:84ce  4C 3B 85    JMP $853B	 ; GO64, LOAD(*),64 (3), RUN64 z QBB (A) ; but not (2) nor DIR(4)+RUN64(F7)
+
+.C:8166  A9 BC       LDA #$BC	; ask for confirmation
+.C:8168  20 D4 89    JSR $89D4
+.C:816b  20 83 81    JSR $8183
+.C:816e  20 FA A2    JSR $A2FA
+.C:8171  C9 0D       CMP #$0D	; allow for C=+RETURN ($8D) here
+.C:8173  D0 15       BNE $818A
+.C:8175  AD A1 02    LDA $02A1
+
+
+00d3		Key shift flag:
+		 0	No shift
+		 1	Shift
+		 2	C=
+		 4	Control
+		 8	Alt
+		15	Caps Lock
+
+88df - here C64 mode (9)GO64 and load"*",64 (3) and RUN64 from QBB (A-Z) start
+.C:853b  20 10 A6    JSR $A610
+.C:853e  A9 00       LDA #$00
+.C:8540  85 24       STA $24
+.C:8542  A9 04       LDA #$04
+.C:8544  85 25       STA $25
+.C:8546  A9 24       LDA #$24
+.C:8548  8D B9 02    STA $02B9
+.C:854b  A0 00       LDY #$00
+.C:854d  B9 DF 88    LDA $88DF,Y
+.C:8550  A2 01       LDX #$01
+.C:8552  20 77 FF    JSR $FF77
+.C:8555  C8          INY
+.C:8556  D0 F5       BNE $854D
+.C:8558  8C 16 D0    STY $D016
+.C:855b  A6 24       LDX $24
+.C:855d  A4 25       LDY $25
+.C:855f  A9 01       LDA #$01 ;; <- bank number ?
+.C:8561  4C F1 85    JMP $85F1
+;;
+.C:85f1  8D D5 03    STA $03D5
+.C:85f4  85 02       STA $02
+.C:85f6  84 03       STY $03
+.C:85f8  86 04       STX $04
+.C:85fa  A9 00       LDA #$00
+.C:85fc  85 05       STA $05
+.C:85fe  85 F7       STA $F7
+.C:8600  A9 40       LDA #$40
+.C:8602  48          PHA
+.C:8603  A9 02       LDA #$02
+.C:8605  48          PHA
+.C:8606  4C 6E FF    JMP $FF6E	;; jsr far
+
+
+; this goes to $0400 in target bank
+.C:88df  A9 7E       LDA #$7E	 ; 01=bank 1; 11=ram 11=ram; 1=ram; 0=i/o
+.C:88e1  8D 00 FF    STA $FF00
+.C:88e4  A5 AE       LDA $AE
+.C:88e6  8D E8 07    STA $07E8
+.C:88e9  A5 AF       LDA $AF
+.C:88eb  8D E9 07    STA $07E9
+.C:88ee  A5 BA       LDA $BA
+.C:88f0  8D EA 07    STA $07EA
+..
+.C:8911  A9 40       LDA #$40	; 01=bank 1; 10=bank 2 ; offset $33
+.C:8913  8D 06 D5    STA $D506
+
+
+; need to recover more space
+; handler for + key
+.C:83f1  A5 D3       LDA $D3
+.C:83f3  4A          LSR A
+.C:83f4  B0 4A       BCS $8440	; set_Default_colors
+.C:83f6  4A          LSR A
+.C:83f7  4A          LSR A
+.C:83f8  B0 59       BCS $8453
+.C:83fa  20 00 84    JSR $8400	; setup_screen_and_key
+.C:83fd  4C 8D 81    JMP $818D
+
+set_Default_colors
+.C:8440  A2 0D       LDX #$0D
+.C:8442  A0 0B       LDY #$0B
+.C:8444  A9 00       LDA #$00
+.C:8446  20 26 84    JSR $8426
+.C:8449  A2 0D       LDX #$0D
+.C:844b  A0 07       LDY #$07
+.C:844d  20 31 84    JSR $8431
+.C:8450  4C 8D 81    JMP $818D
+
+; 8453 - CTRL+'+' save servant.mod
+
+[20240219]
+Final touches - bump version to 4.85 to make it distinct. Patch default colors to almost stock C128 Kernal in 40 columns and white on blue in 80 columns.
+Changed default Servant key from SHIFT+RUN/STOP into HELP.
+This is complete. Now it needs a proper readme.md and release with build via github actions (working template for KickAss is with 1571-RAM32K ROM)
+
+[20240221]
+Published on github
+
+-------------------------------------------------
+
+--> to manual
+
+Bumped version number to 4.85
+
+SHIFT+'+' option to reset to default prefs removed
+CTRL+'+' option to save SERVANT.MOD to burn as EPROM removed
+
+4
+  then <RETURN> on CBM (1581) or DIR (sd2iec) will enter that directory
+  then / on 1581 goes to root dir, on sd2iec to parent dir (level up - out of disk image or to parent directory)
+
+^ to format QBB in bank 3 (or 1 on unexpanded C128), then use F1/F3 to load data into there. It's not much but can cache something in bank 1.
+  Note that bank1 will be destroyed if you go to C64 mode via Servant's option on key 9.
+
+9 or SHIFT+9
+  On the confirmation message press RETURN to run C64 mode in bank1 or C=+RETURN to run in bank 2 (or 0 on unexpanded C128)
+
+SD2IEC should show disk images as DIRs, so issue XI1 or XI2 and store as default. In JiffyDos this needs quotes:
+@"XI1",9
+Write defaults to EEPROM
+@"XW",9
+
+SD2IEC manuals:
+https://c64os.com/post/sd2iecdocumentation
+https://www.sd2iec.de/gitweb/?p=sd2iec.git;a=blob;f=README;hb=HEAD
+
+HINTS:
+Modifiers to choose device for boot/run/run64/directory/DOS command ('@')
+
+dev 9: SHIFT
+dev10: C=
+dev11: CTRL
+dev12: ALT
+
+DOS commands reminder:
+<SHIFT>+<RETURN> recall last command
+UI warm reset, read message
+UJ cold reset
+#<number> change drive numbers to <number>, swap with that device if it's already on the bus
+1571:
+U0>M0 1541 mode
+U0>M1 1571 mode
+U0>H0 select head 0 (in 1541 mode only)
+U0>H1 select head 1 (in 1541 mode only) - this is not like flipping 1541 disk, it spins the wrong way(!)
+U0>V1 write verify off
+U0>V0 write verify on
+1581:
+/0:<name> enter partition
+/ change to root
+SD2IEC:
+CD<name> enter subfolder or disk image (D64/71/81)
+CD<leftarrow> go one level up - parent folder or out of disk image
+XI2 show disk images as both files (PRG) and folders (DIR)
+XI1 show disk images as folder (DIR only)
+XI0 disable that feature
+XW save current config to EEPROM
