@@ -55,7 +55,7 @@
 
 .print "Assembling SERVANT.BIN"
 .print "Load into VICE with bank ram; l 'servant.bin' 0 8002; a 8000 nop nop"
-.segmentdef Combined  [outBin="servant.bin", segments="Base,Patch1,Patch2,Patch3,Patch4,Patch5,Patch6,Patch7,Patch8,Patch9,Patch10,Patch11,MainPatch,PatchConfig,PatchVersion", allowOverlap]
+.segmentdef Combined  [outBin="servant.bin", segments="Base,Patch1,Patch2,Patch3,Patch4,Patch5,Patch6,Patch7,Patch8,Patch9,Patch10,Patch11,Patch12,MainPatch,PatchConfig,PatchVersion", allowOverlap]
 
 .segment Base [start = $8000, max=$ffff]
 // load binary image of ROM, created and configured by Servant, saved with CTRL+'+' combination OR dumped from an EPROM (32768 bytes)
@@ -121,6 +121,10 @@ Patch2Cont:
 		sta $d506
 		jmp QBB_2		// jump to the second part
 
+// command to go up one level
+cmd_cdup:	.byte 'C','D',':',$5F
+
+
 .segment Patch5 [min=$87a7, max=$87c8]
 		.pc = $87a7 "Patch to read/write QBB as remapped stack from bank 3 (2/2)"
 QBB_2:
@@ -180,6 +184,10 @@ GO64StoreFlags2:
 		.pc = $853e "Patch to set bank number in $06 to 1 or 2"
 		jsr GO64StoreFlags
 		nop
+
+.segment Patch12 [min=$8d9d, max=$8d9e]
+		.pc = $8d9d "Patch to set filename address to $0200 instead of $0201 when changing directory"
+		ldx #$00
 
 ///////////////////////////////////// COMMON PATCH AREA REPLACES DEFAULT COLOR SET AND SERVANT.MOD SAVER
 
@@ -248,17 +256,18 @@ CheckFileType:
 @havedir:
 		jsr $817b		// 8d90, copy that
 		jsr $9a0d		// 8d93, copy that
-		lda #'D'
+		inc $24			// increment filename length (was $0201, now it's $0200)
+		lda #':'
 		sta $0202
-		lda #'C'		// CD<name>, name already is in $0203
+		lda #'C'
+		sta $0200
+		lda #'D'		// CD:<name>, name already is in $0203
 		jmp $8d98		// continue: sta $0201 + send command
 
 GoToRoot:
-		lda #3			// CD<-
+		lda #4			// CD<-
 		ldx #<cmd_cdup
 		ldy #>cmd_cdup
 		jsr $9829		// send command
 		jsr $98da		// close all files
 		jmp $9fb1		// original code from 99E5: detect drive type, return with Y=6 for 1581
-
-cmd_cdup:	.byte 'C','D',$5F
