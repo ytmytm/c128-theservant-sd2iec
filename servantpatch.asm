@@ -55,7 +55,7 @@
 
 .print "Assembling SERVANT.BIN"
 .print "Load into VICE with bank ram; l 'servant.bin' 0 8002; a 8000 nop nop"
-.segmentdef Combined  [outBin="servant.bin", segments="Base,Patch1,Patch2,Patch3,Patch4,Patch5,Patch6,Patch7,Patch8,Patch9,Patch10,Patch11,Patch12,MainPatch,PatchConfig,PatchVersion", allowOverlap]
+.segmentdef Combined  [outBin="servant.bin", segments="Base,Patch1,Patch2,Patch3,Patch4,Patch5,Patch6,Patch7,Patch8,Patch9,Patch10,Patch11,Patch12,Patch13,MainPatch,PatchConfig,PatchVersion", allowOverlap]
 
 .segment Base [start = $8000, max=$ffff]
 // load binary image of ROM, created and configured by Servant, saved with CTRL+'+' combination OR dumped from an EPROM (32768 bytes)
@@ -188,6 +188,10 @@ GO64StoreFlags2:
 .segment Patch12 [min=$8d9d, max=$8d9e]
 		.pc = $8d9d "Patch to set filename address to $0200 instead of $0201 when changing directory"
 		ldx #$00
+
+.segment Patch13 [min=$9886, max=$9887]
+		.pc = $9886 "Patch to list directory as '$' instead of '$0'"
+		lda #$01
 
 ///////////////////////////////////// COMMON PATCH AREA REPLACES DEFAULT COLOR SET AND SERVANT.MOD SAVER
 
