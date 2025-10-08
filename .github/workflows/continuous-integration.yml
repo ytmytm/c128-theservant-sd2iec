@@ -35,7 +35,7 @@ jobs:
 
       # Upload artifacts
       - name: Archive patched Servant ROM
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: theservant-v4.85.bin
           path: servant.bin
