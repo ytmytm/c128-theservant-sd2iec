@@ -50,6 +50,11 @@
 // Patch 11 called at the common beginning of GO64 routine - check for C= key status (C= not CTRL because of patch 7) and set bank in $06 properly
 //          choose bank 1 ($05==0, $06==1) when C= is released and bank 2 ($05==1, $06==2) when C= is pressed
 //
+// Patch 12 reorders the instructions so that original code points to filename (X/Y) at $0201, but we can jump in the middle with X=0 for filename at $0200
+//          This is needed for three characters needed for 'CD:'<name>
+//
+// Patch 13 shortens the filename opened for function (4) (directory listing) to '$' from '$0'; because U2+ interprets that as pattern match
+//
 // PatchConfig allows to reconfigure Servant settings (except strings assigned to function keys)
 
 
@@ -127,6 +132,7 @@ CheckFileType_cont:
 
 // command to go up one level
 cmd_cdup:	.byte 'C','D',':',$5F
+cmd_cdup_end:
 
 .segment Patch5 [min=$87a7, max=$87c8]
 		.pc = $87a7 "Patch to read/write QBB as remapped stack from bank 3 (2/2)"
@@ -280,7 +286,7 @@ CheckFileType:
 //		jmp $8d98		// continue: sta $0201 + send command
 
 GoToRoot:
-		lda #4			// CD<-
+		lda #(cmd_cdup_end-cmd_cdup) // CD:<- / CD:..
 		ldx #<cmd_cdup
 		ldy #>cmd_cdup
 		jsr $9829		// send command
