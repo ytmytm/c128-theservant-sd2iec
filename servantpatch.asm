@@ -50,12 +50,17 @@
 // Patch 11 called at the common beginning of GO64 routine - check for C= key status (C= not CTRL because of patch 7) and set bank in $06 properly
 //          choose bank 1 ($05==0, $06==1) when C= is released and bank 2 ($05==1, $06==2) when C= is pressed
 //
+// Patch 12 reorders the instructions so that original code points to filename (X/Y) at $0201, but we can jump in the middle with X=0 for filename at $0200
+//          This is needed for three characters needed for 'CD:'<name>
+//
+// Patch 13 shortens the filename opened for function (4) (directory listing) to '$' from '$0'; because U2+ interprets that as pattern match
+//
 // PatchConfig allows to reconfigure Servant settings (except strings assigned to function keys)
 
 
 .print "Assembling SERVANT.BIN"
 .print "Load into VICE with bank ram; l 'servant.bin' 0 8002; a 8000 nop nop"
-.segmentdef Combined  [outBin="servant.bin", segments="Base,Patch1,Patch2,Patch3,Patch4,Patch5,Patch6,Patch7,Patch8,Patch9,Patch10,Patch11,MainPatch,PatchConfig,PatchVersion", allowOverlap]
+.segmentdef Combined  [outBin="servant.bin", segments="Base,Patch1,Patch2,Patch3,Patch4,Patch5,Patch6,Patch7,Patch8,Patch9,Patch10,Patch11,Patch12,Patch13,MainPatch,PatchConfig,PatchVersion", allowOverlap]
 
 .segment Base [start = $8000, max=$ffff]
 // load binary image of ROM, created and configured by Servant, saved with CTRL+'+' combination OR dumped from an EPROM (32768 bytes)
@@ -121,6 +126,14 @@ Patch2Cont:
 		sta $d506
 		jmp QBB_2		// jump to the second part
 
+CheckFileType_cont:
+		ldx #$00        // $0200 instead of $0201
+		jmp RunCDCommand
+
+// command to go up one level
+cmd_cdup:	.byte 'C','D',':',$5F
+cmd_cdup_end:
+
 .segment Patch5 [min=$87a7, max=$87c8]
 		.pc = $87a7 "Patch to read/write QBB as remapped stack from bank 3 (2/2)"
 QBB_2:
@@ -180,6 +193,21 @@ GO64StoreFlags2:
 		.pc = $853e "Patch to set bank number in $06 to 1 or 2"
 		jsr GO64StoreFlags
 		nop
+
+.segment Patch12 [min=$8d98, max=$8d9e]
+		.pc = $8d98 "Patch to set filename address to $0200 instead of $0201 when changing directory, but $0201 otherwise"
+		// just reorder instructions so that LDX #$01 is first and can be skipped
+		ldx #$01        // $0201
+RunCDCommand:
+		sta $0201
+		lda $24
+//		ldy #$02 // not changed
+//		jsr $9829
+//		jmp $8bc3
+
+.segment Patch13 [min=$9886, max=$9887]
+		.pc = $9886 "Patch to list directory as '$' instead of '$0'"
+		lda #$01
 
 ///////////////////////////////////// COMMON PATCH AREA REPLACES DEFAULT COLOR SET AND SERVANT.MOD SAVER
 
@@ -248,17 +276,19 @@ CheckFileType:
 @havedir:
 		jsr $817b		// 8d90, copy that
 		jsr $9a0d		// 8d93, copy that
-		lda #'D'
+		inc $24			// increment filename length (was $0201, now it's $0200)
+		lda #':'
 		sta $0202
-		lda #'C'		// CD<name>, name already is in $0203
-		jmp $8d98		// continue: sta $0201 + send command
+		lda #'C'
+		sta $0200
+		lda #'D'		// CD:<name>, name already is in $0203
+		jmp CheckFileType_cont
+//		jmp $8d98		// continue: sta $0201 + send command
 
 GoToRoot:
-		lda #3			// CD<-
+		lda #(cmd_cdup_end-cmd_cdup) // CD:<- / CD:..
 		ldx #<cmd_cdup
 		ldy #>cmd_cdup
 		jsr $9829		// send command
 		jsr $98da		// close all files
 		jmp $9fb1		// original code from 99E5: detect drive type, return with Y=6 for 1581
-
-cmd_cdup:	.byte 'C','D',$5F
