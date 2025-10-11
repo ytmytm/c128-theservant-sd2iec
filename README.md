@@ -1,6 +1,6 @@
 # Patch for "The Servant" ROM for Commodore 128
 
-This project patches the original "The Servant V4.84" ROM with new functionality, aimed for users with SD2IEC devices and owners of C128s expanded to 256K RAM.
+This project patches the original "The Servant V4.84" ROM with new functionality, aimed for users with SD2IEC / Ultimate II+ devices and owners of C128s expanded to 256K RAM.
 
 To make it distinct from the original "The Servant" release I changed the version number to 4.85.
 
@@ -13,12 +13,13 @@ Use `XI1` command on your SD2IEC to list disk images as folders and just use dir
 
 - The patched version of The Servant uses `HELP` key to start the menu.
 - SD2IEC folders and disk images can be entered/exited from the directory browser
+- Ultimate II+ SoftIEC folders can be entered/exited from the directory browser
 - RAM bank 3 can be used as 64K Quick Brown Box (QBB) (256K C128 only)
 - RAM bank 2 can be used as an additional C64 mode area (256K C128 only)
 
 ## New Features
 
-The patched version of The Servant uses `HELP` key to start the menu.
+The patched version of The Servant uses `HELP` key to start the menu. This can be changed if you reassemble the patch yourself.
 
 If you want to copy settings (colors, function key assignments) from your current Servant ROM then replace first $0123 bytes in provided `servant.bin` by data copied from your ROM.
 Read below how to patch the whole ROM instead.
@@ -28,12 +29,14 @@ New features needed some extra space. Because of that two functions were disable
 - `CTRL`+`+` to save configured `SERVANT.MOD` file from RAM
 - `SHIFT`+`+` to reset prefs to defaults
 
-### SD2IEC directory and disk image navigation
+### SD2IEC / Ultimate II+ directory navigation
 
 Option '4' (file browser) will now recognize `DIR` filetype as a directory that you can enter.
 
-- use `RETURN` to enter a folder; equivalent to `CD<name>` DOS command
-- use `/` to go up one level; equivalent to `CD<leftarrow>` DOS command
+- use `RETURN` to enter a folder; equivalent to `CD:<name>` DOS command
+- use `/` to go up one level; equivalent to `CD:<leftarrow>` DOS command
+
+### SD2IEC disk image navigation
 
 To enter disk images (d64, d71, d81) SD2IEC must be configured first to list them as `DIR` files.
 
